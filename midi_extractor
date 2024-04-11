@@ -1,0 +1,53 @@
+import mido
+import json
+import os
+
+def midi_to_text_dict(midi_file_path):
+    mid = mido.MidiFile(midi_file_path)
+    events_list = []
+    ongoing_notes = {}  # Track ongoing notes {note_number: (start_time, velocity)}
+    tempo = None  # Default tempo to None if not found
+
+    current_time = 0  # Track cumulative time to calculate durations
+    for track in mid.tracks:
+        for msg in track:
+            if msg.is_meta:
+                if msg.type == 'set_tempo':
+                    tempo = mido.tempo2bpm(msg.tempo)  # Convert tempo to BPM
+            elif msg.type in ['note_on', 'note_off']:
+                current_time += msg.time  # Increment time by delta from last event
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    # Note started
+                    ongoing_notes[msg.note] = current_time, msg.velocity  # Record start time and velocity
+                elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)) and msg.note in ongoing_notes:
+                    # Note ended, calculate duration
+                    start_time, velocity = ongoing_notes.pop(msg.note)  # Remove note from ongoing_notes
+                    duration = current_time - start_time
+                    event = {"Note": msg.note, "Velocity": velocity, "StartTime": start_time, "Duration": duration}
+                    events_list.append(event)
+
+    return {'Tempo': tempo, 'Events': events_list}
+
+def process_midi_files(folder_path):
+    midi_data_dict = {}
+    for file in os.listdir(folder_path):
+        if file.endswith(".mid") or file.endswith(".midi"):
+            file_path = os.path.join(folder_path, file)
+            file_name = os.path.splitext(os.path.basename(file_path))[0]
+            midi_data_dict[file_name] = midi_to_text_dict(file_path)
+
+    return midi_data_dict
+
+def save_to_json(data, file_path):
+    with open(file_path, 'w') as json_file:
+        json.dump(data, json_file, indent=4)
+
+# Path to the folder containing MIDI files
+midi_folder_path = 'MIDI'
+midi_data = process_midi_files(midi_folder_path)
+
+# Save to a JSON file
+json_file_path = 'midi_data.json'
+save_to_json(midi_data, json_file_path)
+
+print(f"Converted MIDI data has been saved to {json_file_path}")
